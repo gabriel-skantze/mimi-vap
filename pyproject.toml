@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mimi-vap"
+version = "0.1.0"
+description = "Mimi Voice Activity Projection: WAV to CSV and cached streaming inference"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = {file = "LICENSE"}
+authors = [{name = "Gabriel Skantze"}]
+dependencies = [
+  "torch>=2.2,<2.9", "torchaudio>=2.2,<2.9", "numpy>=1.26,<2.3",
+  "einops>=0.8,<0.9", "moshi==0.2.13", "soundfile>=0.12,<0.14",
+  "soxr>=0.5,<2", "websockets>=14,<16",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "build>=1,<2"]
+
+[project.scripts]
+mimi-vap = "mimi_vap.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mimi_vap = ["model.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

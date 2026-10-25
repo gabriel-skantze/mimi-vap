@@ -1,0 +1,19 @@
+{
+  "repository": "gabriel-skantze/mimi-vap",
+  "release": "v0.1.0",
+  "filename": "mimi-vap-epoch05.pt",
+  "url": "https://github.com/gabriel-skantze/mimi-vap/releases/download/v0.1.0/mimi-vap-epoch05.pt",
+  "sha256": "92cf353f2345befdb3cced2f08c476adc33acc31f83f51430d688669ddec80e0",
+  "source_run": "vap-fisher-openyap-seamless-mimi-alibi18m-softkl-30f-sd0-v2",
+  "source_checkpoint": "best-joint-shift-hold-epoch=05-val_joint_shift_hold_balanced_accuracy=0.7980.ckpt",
+  "epoch": 5,
+  "global_step": 282678,
+  "frame_hz": 12.5,
+  "sample_rate": 24000,
+  "bin_times": [
+    0.24,
+    0.48,
+    0.72,
+    0.96
+  ]
+}
