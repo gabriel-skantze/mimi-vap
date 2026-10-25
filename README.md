@@ -157,3 +157,117 @@ changes. The upstream MIT notice is retained in `LICENSE`.
 [Mimi/Moshi](https://github.com/kyutai-labs/moshi) supplies the encoder runtime;
 the pretrained encoder originates from `kyutai/moshiko-pytorch-bf16`.
 See `MODEL_CARD.md` for checkpoint provenance and interpretation limits.
+
+## Citation
+
+If you use this model in a paper, please cite the original VAP paper:
+
+Erik Ekstedt and Gabriel Skantze (2022).
+[Voice Activity Projection: Self-supervised Learning of Turn-taking Events](https://www.isca-archive.org/interspeech_2022/ekstedt22_interspeech.html).
+*Interspeech 2022*, pp. 5190–5194.
+
+```bibtex
+@inproceedings{ekstedt22_interspeech,
+  author    = {Erik Ekstedt and Gabriel Skantze},
+  title     = {{Voice Activity Projection: Self-supervised Learning of Turn-taking Events}},
+  booktitle = {Proc. Interspeech 2022},
+  year      = {2022},
+  pages     = {5190--5194},
+  doi       = {10.21437/Interspeech.2022-10955}
+}
+```
+
+Please also cite the Mimi/Moshi paper for the pretrained encoder (see below),
+and identify this repository, release, and checkpoint so readers can reproduce
+which variant you used. The following software reference supplements the VAP
+paper citation:
+
+```bibtex
+@misc{skantze2026mimivap,
+  author       = {Gabriel Skantze},
+  title        = {{Mimi VAP}: Voice Activity Projection with a Mimi Encoder},
+  year         = {2026},
+  howpublished = {Software, version 0.1.0},
+  url          = {https://github.com/gabriel-skantze/mimi-vap},
+  note         = {Epoch-05 checkpoint selected by joint validation shift/hold
+                  balanced accuracy (0.7980)}
+}
+```
+
+### How this model differs
+
+This release builds on the waveform-only stereo VAP implementation, whose
+self-attention and cross-attention architecture is described by
+[Inoue et al. (2024)](https://arxiv.org/abs/2401.04868).
+The changes below describe this repository's variant; they should be reported
+alongside the original VAP citation.
+
+- **Speech representation:** the CPC encoder is replaced with a frozen
+  [Mimi encoder from Moshi](https://arxiv.org/abs/2410.00037). It supplies
+  continuous 512-dimensional features before quantization, using 24 kHz audio
+  and a 12.5 Hz frame rate. The model does not use discrete Mimi tokens.
+- **Predictor:** approximately 18.3M trainable parameters, with model width 384,
+  two channel self-attention layers, six stereo cross-attention layers, and six
+  attention heads. It retains the upstream stereo implementation's
+  [ALiBi positional biases](https://arxiv.org/abs/2108.12409), uses standard
+  per-head attention scaling, and adds normalization of the cross-attention
+  source and VAD-head input.
+- **Forecast targets:** four bins per speaker have widths `[3, 6, 9, 12]`
+  frames, covering 2.4 seconds in total. Instead of thresholding each bin into
+  a hard activity bit, the training target uses its speech-occupancy fraction
+  as a Bernoulli probability. Products over the eight bits define a soft
+  distribution over the 256 VAP classes. Training minimizes
+  `KL(soft target || predicted distribution)` together with binary
+  cross-entropy for current VAD. This soft-target construction is a change
+  in this implementation, not a method attributed to the original VAP paper.
+- **Training:** a fresh predictor and VAP/VAD heads were trained over frozen
+  Mimi features on Fisher parts 1 and 2, Open Yap 1K, and Seamless Interaction.
+  Fisher and OpenYap splits are speaker-disjoint; Seamless uses its supplied
+  splits. Fisher part 1 uses its original activity regions, while the other
+  sources use labels produced by a WavLM-based VAD model. Same-channel speech
+  regions separated by less than 200 ms were merged. The released model was
+  selected by pooled validation shift/hold balanced accuracy.
+- **Inference:** persistent Mimi state and bounded per-layer KV caches enable
+  streaming without re-encoding the entire context. The default VAP cache is
+  20 seconds. This is an inference implementation change; it does not alter
+  the released weights. Report the context length and `relative` or `neutral`
+  aggregation setting used in your experiments.
+
+A short methods description you can adapt:
+
+> We used a modified stereo Voice Activity Projection model (Ekstedt and
+> Skantze, 2022; Inoue et al., 2024), replacing its CPC encoder with frozen,
+> continuous Mimi features (Défossez et al., 2024). The model operates at
+> 12.5 Hz and uses an approximately 18.3M-parameter ALiBi transformer to predict
+> a joint distribution over two speakers' activity in four future bins spanning
+> 2.4 s, together with current voice activity. It was trained on Fisher,
+> Open Yap 1K, and Seamless Interaction using occupancy-based soft VAP targets
+> and a VAD objective. We used the epoch-05 checkpoint from Mimi VAP v0.1.0,
+> selected by validation shift/hold balanced accuracy, with a 20 s KV cache and
+> relative speaker-probability aggregation.
+
+### Related papers and resources
+
+- **Stereo VAP:** Koji Inoue, Bing'er Jiang, Erik Ekstedt, Tatsuya Kawahara,
+  and Gabriel Skantze (2024).
+  [Real-time and Continuous Turn-taking Prediction Using Voice Activity Projection](https://arxiv.org/abs/2401.04868).
+- **Mimi encoder:** Alexandre Défossez, Laurent Mazaré, Manu Orsini,
+  Amélie Royer, Patrick Pérez, Hervé Jégou, Edouard Grave, and Neil Zeghidour
+  (2024). [Moshi: a speech-text foundation model for real-time dialogue](https://arxiv.org/abs/2410.00037).
+- **ALiBi:** Ofir Press, Noah A. Smith, and Mike Lewis (2022).
+  [Train Short, Test Long: Attention with Linear Biases Enables Input Length Extrapolation](https://arxiv.org/abs/2108.12409).
+  *ICLR 2022*. ALiBi was already used in the upstream stereo VAP code.
+- **Attention scaling:** Ashish Vaswani et al. (2017).
+  [Attention Is All You Need](https://arxiv.org/abs/1706.03762).
+  The predictor scales attention scores by `1 / sqrt(head_dim)`.
+- **Training-label representation:** Sanyuan Chen et al. (2022).
+  [WavLM: Large-Scale Self-Supervised Pre-Training for Full Stack Speech Processing](https://arxiv.org/abs/2110.13900).
+  WavLM was used in the training-label pipeline; Mimi is the inference encoder.
+
+For training-data provenance, also see the
+[Fisher corpus paper (Cieri, Miller, and Walker, 2004)](https://aclanthology.org/L04-1500/),
+the [Open Yap 1K dataset release and citation](https://github.com/The-Agentic-Data-Co/open-yap-1k#citation),
+and the [Seamless Interaction dataset paper (Agrawal et al., 2025)](https://arxiv.org/abs/2506.22554).
+The soft-target objective, normalization changes, and cache implementation
+are documented here as modifications to this model; these references do not
+constitute a separate publication evaluating this exact checkpoint.
