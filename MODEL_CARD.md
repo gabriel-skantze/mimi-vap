@@ -34,5 +34,5 @@ The inference core derives from the MIT-licensed VoiceActivityProjection
 project. The Mimi architecture/runtime is provided by Kyutai's Moshi package;
 encoder initialization used `kyutai/moshiko-pytorch-bf16`. The retained upstream
 code license is in `LICENSE`. That code license does not establish an independent
-license for the model weights or training corpora; this private release makes no
+license for the model weights or training corpora; this release makes no
 additional grant for redistribution of those materials.

@@ -20,17 +20,17 @@ TorchAudio must have matching versions; for CUDA, install the appropriate pair
 from [PyTorch](https://pytorch.org/get-started/locally/) first.
 
 ```bash
-git clone git@github.com:gabriel-skantze/mimi-vap.git
+git clone https://github.com/gabriel-skantze/mimi-vap.git
 cd mimi-vap
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
 ```
 
-The repository is private. To download its model release automatically, install
-the [GitHub CLI](https://cli.github.com/) and run `gh auth login` with an account
-that has access. Alternatively, download `mimi-vap-epoch05.pt` from this repository's
-**v0.1.0 release** and pass `--checkpoint /path/to/mimi-vap-epoch05.pt`.
+The default model downloads automatically on first use; no GitHub login is
+required. Alternatively, download `mimi-vap-epoch05.pt` from the
+[v0.1.0 release](https://github.com/gabriel-skantze/mimi-vap/releases/tag/v0.1.0)
+and pass `--checkpoint /path/to/mimi-vap-epoch05.pt`.
 The compact checkpoint includes Mimi encoder weights; no separate Hugging Face
 download is needed. Downloads are cached and checked against a pinned SHA-256.
 
