@@ -1,11 +1,79 @@
-# Mimi VAP
+# Voice Activity Projection
 
-Voice Activity Projection for two-speaker audio. Run a WAV of any duration to get
-frame-level CSV predictions, or start a WebSocket server for live audio.
-Both use the frozen Mimi encoder's persistent streaming state and bounded
-transformer key/value caches. Audio and CSV are processed incrementally.
+Voice Activity Projection (VAP) is a model of conversational turn-taking. It
+listens to the audio of a conversation and continuously predicts the future
+speech activity of both participants. These predictions help distinguish a
+pause within someone's turn from an opportunity for the other person to speak,
+and can be used to anticipate turn shifts and backchannels. VAP learns from
+speech-activity patterns in recorded conversations, without requiring explicit
+turn-taking event labels or transcripts.
 
-The default weights are the requested four-corpus Mimi / ALiBi 18M model:
+This repository extends the
+[original VoiceActivityProjection implementation](https://github.com/ErikEkstedt/VoiceActivityProjection)
+by Erik Ekstedt and Gabriel Skantze. The approach was introduced in
+[Voice Activity Projection: Self-supervised Learning of Turn-taking Events](https://www.isca-archive.org/interspeech_2022/ekstedt22_interspeech.html)
+(Interspeech 2022). This version predicts current voice activity (VAD) and the
+relative future activity of each speaker (`p_now` and `p_fut`) every 80 ms,
+with a forecast horizon of 2.4 seconds.
+
+## How this version extends VAP
+
+- **Stereo model:** this release focuses on two-channel conversations, with
+  one speaker per channel. Separate channel representations interact through
+  cross-attention. The original project supported both mono and stereo models;
+  this release builds on its stereo architecture. A single speaker's mono
+  recording can also be used by adding a silent second channel.
+- **Mimi encoder:** the original CPC speech encoder is replaced with a frozen
+  [Mimi encoder](https://arxiv.org/abs/2410.00037). The predictor uses its
+  continuous features before quantization, combining acoustic and linguistic
+  information at a frame rate of 12.5 Hz.
+- **24 kHz audio:** Mimi processes 24 kHz waveforms, extending the 16 kHz input
+  used by the upstream CPC encoder. WAV files at other sample rates are
+  resampled automatically; live streaming accepts 24 kHz audio.
+- **Different frame rate and longer horizon:** predictions are produced at
+  **12.5 Hz** (one frame every 80 ms), compared with the upstream model's
+  50 Hz (20 ms). The future activity window extends from 2.0 to **2.4 seconds**,
+  using four bins with widths of 0.24, 0.48, 0.72, and 0.96 seconds. `p_now`
+  summarizes the first two bins (0–0.72 s), and `p_fut` the last two
+  (0.72–2.40 s).
+- **Bigger model:** the VAP predictor and heads have approximately 18.3 million
+  trainable parameters. The transformer has width 384, two channel
+  self-attention layers, six stereo cross-attention layers, and six attention
+  heads, increasing capacity over the smaller upstream architecture. Mimi
+  remains frozen during training.
+- **More training data:** the model was trained on approximately **6,630 hours
+  of conversational recordings** from Fisher parts 1 and 2, Open Yap 1K, and
+  Seamless Interaction. Together these cover telephone conversations, remote
+  conversations between familiar speakers, and face-to-face interactions.
+- **Offline and streaming inference:** process a WAV of any length into a CSV
+  of frame-level predictions, or use a WebSocket server for live conversations.
+  Both modes preserve Mimi's streaming state and use bounded transformer
+  key/value (KV) caches, processing each new audio frame once. The default VAP
+  cache retains 20 seconds of context, keeping memory use bounded for long
+  recordings and conversations.
+
+### Training data
+
+The training manifest contains **1,507,616 overlapping 20-second windows** drawn
+from the following recordings:
+
+| Corpus | Conversation type | Training audio (hours) |
+| --- | --- | ---: |
+| [Fisher part 1](https://aclanthology.org/L04-1500/) | Two-speaker telephone calls | 830.65 |
+| [Fisher part 2](https://aclanthology.org/L04-1500/) | Two-speaker telephone calls | 942.54 |
+| [Open Yap 1K](https://theagenticdatacompany.com/open-yap-1k) | Natural remote conversations between people who know each other | 964.24 |
+| [Seamless Interaction](https://arxiv.org/abs/2506.22554) | Face-to-face interactions in naturalistic and prompted settings | 3,892.55 |
+| **Total** | | **6,629.99** |
+
+Hours are the durations of training recordings that contributed at least one
+window, counting each conversation once across both channels. They exclude
+validation and test recordings and do not sum overlapping window durations;
+the windows select portions of these recordings. Fisher and OpenYap were split
+by speaker, and Seamless retains its supplied splits. See the
+[citation section](#citation) for the training objective and further details.
+
+The default weights are the four-corpus Mimi / ALiBi model, selected by joint
+validation shift/hold balanced accuracy:
 
 ```
 vap-fisher-openyap-seamless-mimi-alibi18m-softkl-30f-sd0-v2/
