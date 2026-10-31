@@ -33,9 +33,7 @@ with a forecast horizon of 2.4 seconds.
 - **Different frame rate and longer horizon:** predictions are produced at
   **12.5 Hz** (one frame every 80 ms), compared with the upstream model's
   50 Hz (20 ms). The future activity window extends from 2.0 to **2.4 seconds**,
-  using four bins with widths of 0.24, 0.48, 0.72, and 0.96 seconds. `p_now`
-  summarizes the first two bins (0–0.72 s), and `p_fut` the last two
-  (0.72–2.40 s).
+  using four bins with widths of 0.24, 0.48, 0.72, and 0.96 seconds.
 - **Bigger model:** the VAP predictor and heads have approximately 18.3 million
   trainable parameters. The transformer has width 384, two channel
   self-attention layers, six stereo cross-attention layers, and six attention
@@ -70,16 +68,10 @@ window, counting each conversation once across both channels. They exclude
 validation and test recordings and do not sum overlapping window durations;
 the windows select portions of these recordings. Fisher and OpenYap were split
 by speaker, and Seamless retains its supplied splits. See the
-[citation section](#citation) for the training objective and further details.
+[model card](MODEL_CARD.md) for the training objective and label preparation.
 
-The default weights are the four-corpus Mimi / ALiBi model, selected by joint
-validation shift/hold balanced accuracy:
-
-```
-vap-fisher-openyap-seamless-mimi-alibi18m-softkl-30f-sd0-v2/
-  threshold-eval/checkpoints/
-  best-joint-shift-hold-epoch=05-val_joint_shift_hold_balanced_accuracy=0.7980.ckpt
-```
+The default weights are the epoch-05 checkpoint, selected by joint validation
+shift/hold balanced accuracy (0.7980). Its full identity is in the model card.
 
 ## Install
 
@@ -115,28 +107,25 @@ resampler. Stereo should contain one speaker per channel: left = speaker 0,
 right = speaker 1. Mono is assigned to speaker 0, with a silent speaker 1.
 Mixed mono recordings aren't separated or diarized.
 
-There is one row per 80 ms model frame (12.5 Hz), including a final partial frame
-that is padded with silence. Empty audio produces a header with no rows.
+There is one row per model frame, including a final partial frame padded with
+silence. Empty audio produces a header with no rows.
 
 | CSV field | Meaning |
 | --- | --- |
 | `frame` | Zero-based model frame index |
 | `time_s`, `end_s` | Start and end of this frame in the input audio |
 | `vad_0`, `vad_1` | Predicted current voice-activity probabilities; threshold at 0.5 for binary VAD |
-| `p_now_0`, `p_now_1` | Relative projected activity for each speaker in the first two bins |
-| `p_fut_0`, `p_fut_1` | Relative projected activity for each speaker in the last two bins |
+| `p_now_0`, `p_now_1` | Relative projected activity for each speaker over 0–0.72 s |
+| `p_fut_0`, `p_fut_1` | Relative projected activity for each speaker over 0.72–2.40 s |
 
-For this 12.5 Hz model, bin widths are `[3, 6, 9, 12]` frames, so the near-future
-window is approximately 0–0.72 s and the future window 0.72–2.40 s after the
-current frame. The `30f` run name denotes the training data's VAD envelope,
-not a 30 Hz prediction rate. Each `p_*` pair sums to one. These scores compare
-projected speaker activity; they aren't calibrated probabilities that speech
-will occur. `--aggregation neutral` moves silence or balanced evidence toward
-0.5; `relative` preserves the original model's normalized speaker balance.
+Each `p_*` pair sums to one. These scores compare projected speaker activity;
+they aren't calibrated probabilities that speech will occur.
+`--aggregation neutral` moves silence or balanced evidence toward 0.5;
+`relative` preserves the original model's normalized speaker balance.
 
 Timestamps describe audio time, not wall-clock delivery time. A prediction
 becomes available after that frame's audio arrives (plus computation and any
-input resampling delay). A partial final frame uses zero padding.
+input resampling delay).
 
 ## Streaming WebSocket server
 
@@ -182,7 +171,7 @@ a dedicated worker thread so network handling remains responsive. The server
 binds to localhost by default; use your own authentication/TLS proxy if exposing
 it to a network.
 
-## Cache behavior and Python API
+## Python API
 
 ```python
 import numpy as np
@@ -196,12 +185,9 @@ with model.stream(context_seconds=20) as stream:
     last_rows = stream.flush()
 ```
 
-The default VAP transformer cache retains 250 frames (20 seconds) per layer;
-change it with `--context-seconds`. Mimi maintains its own native bounded
-convolution and attention state. Each input frame is encoded once, with new
-attention queries using cached projected keys and values. WAV inference and
-WebSocket inference both advance one frame at a time, independently of input
-message boundaries.
+Set `context_seconds` in Python or `--context-seconds` on the command line to
+change the VAP cache length. Input chunks may have arbitrary lengths; incomplete
+frames are buffered until more samples arrive or `flush()` is called.
 
 Cached higher-layer representations retain information from earlier context,
 so predictions can differ from re-encoding a fresh sliding window after cache
@@ -209,7 +195,7 @@ eviction. This is intentional. The streaming model isn't retrained or modified.
 CPU is the default when CUDA is unavailable; `--device mps` is available for
 experimentation but isn't part of the tested compatibility target.
 
-## Development and provenance
+## Development
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -218,13 +204,8 @@ pytest
 MIMI_VAP_CHECKPOINT=models/mimi-vap-epoch05.pt pytest
 ```
 
-The inference core is adapted from Erik Ekstedt's
-[VoiceActivityProjection](https://github.com/ErikEkstedt/VoiceActivityProjection),
-including Gabriel Skantze's Mimi, ALiBi, normalization, and incremental cache
-changes. The upstream MIT notice is retained in `LICENSE`.
-[Mimi/Moshi](https://github.com/kyutai-labs/moshi) supplies the encoder runtime;
-the pretrained encoder originates from `kyutai/moshiko-pytorch-bf16`.
-See `MODEL_CARD.md` for checkpoint provenance and interpretation limits.
+The upstream MIT notice is retained in `LICENSE`. Checkpoint and encoder
+provenance are documented in the [model card](MODEL_CARD.md).
 
 ## Citation
 
@@ -262,57 +243,11 @@ paper citation:
 }
 ```
 
-### How this model differs
-
-This release builds on the waveform-only stereo VAP implementation, whose
-self-attention and cross-attention architecture is described by
-[Inoue et al. (2024)](https://arxiv.org/abs/2401.04868).
-The changes below describe this repository's variant; they should be reported
-alongside the original VAP citation.
-
-- **Speech representation:** the CPC encoder is replaced with a frozen
-  [Mimi encoder from Moshi](https://arxiv.org/abs/2410.00037). It supplies
-  continuous 512-dimensional features before quantization, using 24 kHz audio
-  and a 12.5 Hz frame rate. The model does not use discrete Mimi tokens.
-- **Predictor:** approximately 18.3M trainable parameters, with model width 384,
-  two channel self-attention layers, six stereo cross-attention layers, and six
-  attention heads. It retains the upstream stereo implementation's
-  [ALiBi positional biases](https://arxiv.org/abs/2108.12409), uses standard
-  per-head attention scaling, and adds normalization of the cross-attention
-  source and VAD-head input.
-- **Forecast targets:** four bins per speaker have widths `[3, 6, 9, 12]`
-  frames, covering 2.4 seconds in total. Instead of thresholding each bin into
-  a hard activity bit, the training target uses its speech-occupancy fraction
-  as a Bernoulli probability. Products over the eight bits define a soft
-  distribution over the 256 VAP classes. Training minimizes
-  `KL(soft target || predicted distribution)` together with binary
-  cross-entropy for current VAD. This soft-target construction is a change
-  in this implementation, not a method attributed to the original VAP paper.
-- **Training:** a fresh predictor and VAP/VAD heads were trained over frozen
-  Mimi features on Fisher parts 1 and 2, Open Yap 1K, and Seamless Interaction.
-  Fisher and OpenYap splits are speaker-disjoint; Seamless uses its supplied
-  splits. Fisher part 1 uses its original activity regions, while the other
-  sources use labels produced by a WavLM-based VAD model. Same-channel speech
-  regions separated by less than 200 ms were merged. The released model was
-  selected by pooled validation shift/hold balanced accuracy.
-- **Inference:** persistent Mimi state and bounded per-layer KV caches enable
-  streaming without re-encoding the entire context. The default VAP cache is
-  20 seconds. This is an inference implementation change; it does not alter
-  the released weights. Report the context length and `relative` or `neutral`
-  aggregation setting used in your experiments.
-
-A short methods description you can adapt:
-
-> We used a modified stereo Voice Activity Projection model (Ekstedt and
-> Skantze, 2022; Inoue et al., 2024), replacing its CPC encoder with frozen,
-> continuous Mimi features (Défossez et al., 2024). The model operates at
-> 12.5 Hz and uses an approximately 18.3M-parameter ALiBi transformer to predict
-> a joint distribution over two speakers' activity in four future bins spanning
-> 2.4 s, together with current voice activity. It was trained on Fisher,
-> Open Yap 1K, and Seamless Interaction using occupancy-based soft VAP targets
-> and a VAD objective. We used the epoch-05 checkpoint from Mimi VAP v0.1.0,
-> selected by validation shift/hold balanced accuracy, with a 20 s KV cache and
-> relative speaker-probability aggregation.
+For your methods section, describe the changes summarized in
+[How this version extends VAP](#how-this-version-extends-vap), and report the
+checkpoint, cache context length, and probability aggregation setting used in
+your experiments. Technical details of the soft-target objective and label
+preparation are in the [model card](MODEL_CARD.md).
 
 ### Related papers and resources
 
@@ -332,10 +267,6 @@ A short methods description you can adapt:
   [WavLM: Large-Scale Self-Supervised Pre-Training for Full Stack Speech Processing](https://arxiv.org/abs/2110.13900).
   WavLM was used in the training-label pipeline; Mimi is the inference encoder.
 
-For training-data provenance, also see the
-[Fisher corpus paper (Cieri, Miller, and Walker, 2004)](https://aclanthology.org/L04-1500/),
-the [Open Yap 1K dataset release and citation](https://github.com/The-Agentic-Data-Co/open-yap-1k#citation),
-and the [Seamless Interaction dataset paper (Agrawal et al., 2025)](https://arxiv.org/abs/2506.22554).
-The soft-target objective, normalization changes, and cache implementation
-are documented here as modifications to this model; these references do not
-constitute a separate publication evaluating this exact checkpoint.
+Dataset references are linked in [Training data](#training-data); the
+[Open Yap 1K release](https://github.com/The-Agentic-Data-Co/open-yap-1k#citation)
+provides its recommended dataset citation.

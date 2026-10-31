@@ -15,6 +15,33 @@ The release contains the exact model selected by Gabriel Skantze:
 - Projection widths: `[0.24, 0.48, 0.72, 0.96]` seconds = `[3, 6, 9, 12]` frames.
 - Training objective: occupancy-aware soft-target VAP KL plus VAD BCE.
 
+## Training details
+
+Mimi provides continuous 512-dimensional features before quantization; discrete
+codec tokens are not used. The 384-dimensional predictor has two channel
+self-attention layers, six stereo cross-attention layers, and six attention
+heads. It retains ALiBi, uses `1 / sqrt(head_dim)` attention scaling, and
+normalizes the cross-attention source and VAD-head input.
+
+For each of the eight speaker/future-bin bits, the target probability is the
+fraction of active VAD frames in that bin. Products of these Bernoulli
+probabilities define a soft distribution over the 256 VAP classes. Training
+minimizes `KL(soft target || predicted distribution)` plus binary cross-entropy
+for current VAD. This occupancy-based objective replaces hard bin labels in
+this variant; it is not attributed to the original VAP paper.
+
+The predictor and VAP/VAD heads were trained from scratch over frozen Mimi
+features. Fisher part 1 uses its original activity regions; Fisher part 2,
+OpenYap, and Seamless use labels produced by a WavLM-based VAD model. Same-channel
+speech regions separated by less than 200 ms were merged. Fisher and OpenYap
+have speaker-disjoint splits; Seamless retains its supplied splits. Corpus
+sizes are reported in the [README](README.md#training-data).
+
+The `30f` run name refers to the 30-frame future horizon: `[3, 6, 9, 12]` frames
+sum to 2.4 seconds at 12.5 Hz.
+
+## Checkpoint export and interpretation
+
 `mimi-vap-epoch05.pt` is a compact state dictionary containing only the original
 Lightning checkpoint's `model.*` tensors with that prefix removed. It includes
 the frozen Mimi encoder. Optimizer, scheduler, and training data aren't included.
